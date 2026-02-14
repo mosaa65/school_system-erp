@@ -17,14 +17,7 @@
 -- 0. جداول مرجعية إضافية (خاصة بالموارد البشرية)
 -- -----------------------------------------------------------------------------
 
--- جدول أنواع الهوية
-CREATE TABLE IF NOT EXISTS lookup_id_types (
-    id TINYINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name_ar VARCHAR(50) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='أنواع الهوية';
-
-INSERT INTO lookup_id_types (name_ar) VALUES ('شخصية'), ('عائلية'), ('جواز'), ('أخرى');
+-- ⚠️ lookup_id_types: مُعرّف في System 01 (البنية المشتركة) — لا تُعاد تعريفه هنا
 
 -- جدول الحالات الوظيفية
 CREATE TABLE IF NOT EXISTS lookup_employment_statuses (
@@ -35,14 +28,7 @@ CREATE TABLE IF NOT EXISTS lookup_employment_statuses (
 
 INSERT INTO lookup_employment_statuses (name_ar) VALUES ('ثابت'), ('متطوع'), ('متعاقد');
 
--- جدول الأجناس (استبدال ENUM)
-CREATE TABLE IF NOT EXISTS lookup_genders (
-    id TINYINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name_ar VARCHAR(20) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='الجنس';
-
-INSERT INTO lookup_genders (name_ar) VALUES ('ذكر'), ('أنثى');
+-- ⚠️ lookup_genders: مُعرّف في System 01 (البنية المشتركة) — لا تُعاد تعريفه هنا
 
 -- جدول مستويات التقييم
 CREATE TABLE IF NOT EXISTS lookup_rating_levels (

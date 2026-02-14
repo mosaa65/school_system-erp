@@ -340,7 +340,7 @@ CREATE TABLE IF NOT EXISTS parent_notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     INDEX idx_student (student_id),
-    INDEX idx_type (notification_type),
+    INDEX idx_type (notification_type_id),
     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
     FOREIGN KEY (created_by_user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
