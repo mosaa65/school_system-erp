@@ -131,6 +131,12 @@ FOR EACH ROW
 BEGIN
     DECLARE v_component_max DECIMAL(5,2);
     DECLARE v_link_count INT DEFAULT 0;
+    DECLARE v_classroom_id INT;
+    DECLARE v_month_semester_id INT;
+    DECLARE v_month_academic_year_id INT;
+    DECLARE v_current_user_id INT;
+    DECLARE v_current_employee_id INT;
+    DECLARE v_is_authorized INT DEFAULT 0;
 
     IF NEW.score < 0 THEN
         SIGNAL SQLSTATE '45000'
@@ -174,6 +180,57 @@ BEGIN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'هذا المكون لا يتبع سياسة الطالب/المادة/الشهر';
     END IF;
+
+    -- التحقق من تكليف المعلم بالمادة/الفصل
+    -- bypass اختياري للعمليات النظامية: SET @skip_teacher_assignment_check = 1;
+    IF COALESCE(@skip_teacher_assignment_check, 0) = 0 THEN
+        SET v_current_user_id = COALESCE(@current_user_id, NULL);
+
+        IF v_current_user_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'يجب ضبط @current_user_id قبل إدخال درجات المكونات المخصصة';
+        END IF;
+
+        SELECT u.employee_id
+        INTO v_current_employee_id
+        FROM users u
+        WHERE u.id = v_current_user_id
+          AND u.is_active = TRUE
+        LIMIT 1;
+
+        IF v_current_employee_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'المستخدم الحالي غير مرتبط بملف موظف نشط';
+        END IF;
+
+        SELECT se.classroom_id
+        INTO v_classroom_id
+        FROM student_enrollments se
+        WHERE se.id = NEW.enrollment_id
+        LIMIT 1;
+
+        SELECT am.semester_id, sem.academic_year_id
+        INTO v_month_semester_id, v_month_academic_year_id
+        FROM academic_months am
+        JOIN semesters sem ON sem.id = am.semester_id
+        WHERE am.id = NEW.month_id
+        LIMIT 1;
+
+        SELECT COUNT(*)
+        INTO v_is_authorized
+        FROM teacher_assignments ta
+        WHERE ta.employee_id = v_current_employee_id
+          AND ta.academic_year_id = v_month_academic_year_id
+          AND ta.semester_id = v_month_semester_id
+          AND ta.subject_id = NEW.subject_id
+          AND ta.classroom_id = v_classroom_id
+          AND ta.is_active = TRUE;
+
+        IF v_is_authorized = 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'غير مصرح لك بإدخال درجات هذا المكون (تحقق من teacher_assignments)';
+        END IF;
+    END IF;
 END//
 
 CREATE TRIGGER trg_mccs_validate_update
@@ -181,6 +238,12 @@ BEFORE UPDATE ON monthly_custom_component_scores
 FOR EACH ROW
 BEGIN
     DECLARE v_component_max DECIMAL(5,2);
+    DECLARE v_classroom_id INT;
+    DECLARE v_month_semester_id INT;
+    DECLARE v_month_academic_year_id INT;
+    DECLARE v_current_user_id INT;
+    DECLARE v_current_employee_id INT;
+    DECLARE v_is_authorized INT DEFAULT 0;
 
     IF NEW.score < 0 THEN
         SIGNAL SQLSTATE '45000'
@@ -203,6 +266,56 @@ BEGIN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'درجة المكون المخصص أعلى من الدرجة العظمى للمكون';
     END IF;
+
+    -- التحقق من تكليف المعلم بالمادة/الفصل
+    IF COALESCE(@skip_teacher_assignment_check, 0) = 0 THEN
+        SET v_current_user_id = COALESCE(@current_user_id, NULL);
+
+        IF v_current_user_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'يجب ضبط @current_user_id قبل تعديل درجات المكونات المخصصة';
+        END IF;
+
+        SELECT u.employee_id
+        INTO v_current_employee_id
+        FROM users u
+        WHERE u.id = v_current_user_id
+          AND u.is_active = TRUE
+        LIMIT 1;
+
+        IF v_current_employee_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'المستخدم الحالي غير مرتبط بملف موظف نشط';
+        END IF;
+
+        SELECT se.classroom_id
+        INTO v_classroom_id
+        FROM student_enrollments se
+        WHERE se.id = NEW.enrollment_id
+        LIMIT 1;
+
+        SELECT am.semester_id, sem.academic_year_id
+        INTO v_month_semester_id, v_month_academic_year_id
+        FROM academic_months am
+        JOIN semesters sem ON sem.id = am.semester_id
+        WHERE am.id = NEW.month_id
+        LIMIT 1;
+
+        SELECT COUNT(*)
+        INTO v_is_authorized
+        FROM teacher_assignments ta
+        WHERE ta.employee_id = v_current_employee_id
+          AND ta.academic_year_id = v_month_academic_year_id
+          AND ta.semester_id = v_month_semester_id
+          AND ta.subject_id = NEW.subject_id
+          AND ta.classroom_id = v_classroom_id
+          AND ta.is_active = TRUE;
+
+        IF v_is_authorized = 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'غير مصرح لك بتعديل درجات هذا المكون (تحقق من teacher_assignments)';
+        END IF;
+    END IF;
 END//
 
 DELIMITER ;
@@ -223,6 +336,7 @@ CREATE PROCEDURE sp_calculate_monthly_grades(
 BEGIN
     DECLARE v_grade_level_id INT;
     DECLARE v_academic_year_id INT;
+    DECLARE v_month_semester_id INT;
     DECLARE v_max_attendance DECIMAL(5,2);
     DECLARE v_max_homework DECIMAL(5,2);
     DECLARE v_max_exam DECIMAL(5,2);
@@ -244,8 +358,8 @@ BEGIN
       AND gp.exam_type_id = 1 -- MONTHLY
     LIMIT 1;
 
-    SELECT am.start_date, am.end_date
-    INTO v_month_start, v_month_end
+    SELECT am.start_date, am.end_date, am.semester_id
+    INTO v_month_start, v_month_end, v_month_semester_id
     FROM academic_months am
     WHERE am.id = p_month_id
     LIMIT 1;
@@ -258,7 +372,7 @@ BEGIN
         se.id AS enrollment_id,
         p_subject_id,
         p_month_id,
-        (SELECT am2.semester_id FROM academic_months am2 WHERE am2.id = p_month_id LIMIT 1),
+        v_month_semester_id,
         v_academic_year_id,
 
         COALESCE((vas.attendance_percentage / 100) * COALESCE(v_max_attendance, 5.00), 0) AS calc_attendance,
@@ -301,9 +415,17 @@ BEGIN
             SUM(et.max_score) AS total_max
         FROM student_exam_scores ses
         JOIN exam_timetable et ON ses.exam_timetable_id = et.id
+        JOIN exam_periods ep ON ep.id = et.exam_period_id
+        JOIN lookup_exam_period_statuses leps ON leps.id = ep.status_id
         WHERE et.subject_id = p_subject_id
           AND et.grade_level_id = v_grade_level_id
+          AND et.is_active = TRUE
           AND et.exam_date BETWEEN v_month_start AND v_month_end
+          AND ep.is_active = TRUE
+          AND ep.academic_year_id = v_academic_year_id
+          AND ep.semester_id = v_month_semester_id
+          AND ep.exam_type_id = 1 -- MONTHLY only
+          AND leps.code IN ('SCORING', 'REVIEW', 'APPROVED')
           AND ses.is_present = TRUE
         GROUP BY ses.enrollment_id
     ) exam_data ON exam_data.enrollment_id = se.id
@@ -352,12 +474,26 @@ BEGIN
     DECLARE v_max_activity DECIMAL(5,2) DEFAULT 999;
     DECLARE v_max_contribution DECIMAL(5,2) DEFAULT 999;
     DECLARE v_grade_level_id INT;
+    DECLARE v_classroom_id INT;
+    DECLARE v_month_semester_id INT;
+    DECLARE v_month_academic_year_id INT;
+    DECLARE v_current_user_id INT;
+    DECLARE v_current_employee_id INT;
+    DECLARE v_is_authorized INT DEFAULT 0;
 
     -- جلب صف الطالب
-    SELECT c.grade_level_id INTO v_grade_level_id
+    SELECT se.classroom_id, c.grade_level_id
+    INTO v_classroom_id, v_grade_level_id
     FROM student_enrollments se
     JOIN classrooms c ON se.classroom_id = c.id
     WHERE se.id = NEW.enrollment_id
+    LIMIT 1;
+
+    SELECT am.semester_id, sem.academic_year_id
+    INTO v_month_semester_id, v_month_academic_year_id
+    FROM academic_months am
+    JOIN semesters sem ON sem.id = am.semester_id
+    WHERE am.id = NEW.month_id
     LIMIT 1;
 
     -- جلب الحدود من السياسة
@@ -366,9 +502,50 @@ BEGIN
     FROM grading_policies gp
     WHERE gp.grade_level_id = v_grade_level_id
       AND gp.subject_id = NEW.subject_id
-      AND gp.academic_year_id = COALESCE(NEW.academic_year_id, gp.academic_year_id)
+      AND gp.academic_year_id = COALESCE(NEW.academic_year_id, v_month_academic_year_id)
       AND gp.exam_type_id = 1 -- MONTHLY
     LIMIT 1;
+
+    -- التحقق من تكليف المعلم فقط عند تعديل الحقول اليدوية (نشاط/مساهمة)
+    -- bypass اختياري للعمليات النظامية: SET @skip_teacher_assignment_check = 1;
+    IF (
+        NOT (OLD.activity_score <=> NEW.activity_score)
+        OR NOT (OLD.contribution_score <=> NEW.contribution_score)
+    ) AND COALESCE(@skip_teacher_assignment_check, 0) = 0 THEN
+        SET v_current_user_id = COALESCE(@current_user_id, NULL);
+
+        IF v_current_user_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'يجب ضبط @current_user_id قبل تعديل درجات النشاط/المساهمة';
+        END IF;
+
+        SELECT u.employee_id
+        INTO v_current_employee_id
+        FROM users u
+        WHERE u.id = v_current_user_id
+          AND u.is_active = TRUE
+        LIMIT 1;
+
+        IF v_current_employee_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'المستخدم الحالي غير مرتبط بملف موظف نشط';
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_is_authorized
+        FROM teacher_assignments ta
+        WHERE ta.employee_id = v_current_employee_id
+          AND ta.academic_year_id = v_month_academic_year_id
+          AND ta.semester_id = v_month_semester_id
+          AND ta.subject_id = NEW.subject_id
+          AND ta.classroom_id = v_classroom_id
+          AND ta.is_active = TRUE;
+
+        IF v_is_authorized = 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'غير مصرح لك بتعديل النشاط/المساهمة لهذا الطالب (تحقق من teacher_assignments)';
+        END IF;
+    END IF;
 
     IF NEW.activity_score > v_max_activity THEN
         SIGNAL SQLSTATE '45000'

@@ -12,21 +12,21 @@ SOURCE systems/08_لجان_الامتحانات/DDL_SCHEDULING.sql;
 SOURCE systems/08_لجان_الامتحانات/DDL.sql;
 
 SELECT '🚀 Executing System 05 Updates...' AS status;
-SOURCE systems/05_التعليم_والدرجات/DDL_POLICIES.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_EXAMS.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_HOMEWORKS.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_MONTHLY.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_RESULTS.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_LESSON_PREP.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_AUDIT.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_REPORTS.sql;
-SOURCE systems/05_التعليم_والدرجات/DDL_TOOLS.sql;
+SOURCE systems/05_التعليم_والدرجات/01_سياسات_الدرجات/DDL_POLICIES.sql;
+SOURCE systems/05_التعليم_والدرجات/02_الاختبارات_والفترات/DDL_EXAMS.sql;
+SOURCE systems/05_التعليم_والدرجات/03_الواجبات_المنزلية/DDL_HOMEWORKS.sql;
+SOURCE systems/05_التعليم_والدرجات/04_المحصلة_الشهرية/DDL_MONTHLY.sql;
+SOURCE systems/05_التعليم_والدرجات/05_نتائج_الفصل_والعام/DDL_RESULTS.sql;
+SOURCE systems/05_التعليم_والدرجات/06_تحضير_الدروس/DDL_LESSON_PREP.sql;
+SOURCE systems/05_التعليم_والدرجات/07_التدقيق_والحوكمة/DDL_AUDIT.sql;
+SOURCE systems/05_التعليم_والدرجات/08_التقارير_والمخرجات/DDL_REPORTS.sql;
+SOURCE systems/05_التعليم_والدرجات/09_أدوات_النسخ_السنوي/DDL_TOOLS.sql;
 
 SELECT '🛠️ Patching Dependent Systems (15, 16)...' AS status;
 SOURCE systems/15_لوحة_المعلومات/DDL.sql;
 SOURCE systems/16_التقارير_والكشوفات/DDL.sql;
 
 SELECT '🌱 Seeding Demo Data (Optional)...' AS status;
-SOURCE systems/05_التعليم_والدرجات/DEMO_DATA.sql;
+SOURCE systems/05_التعليم_والدرجات/10_البيانات_التجريبية_والأمثلة/DEMO_DATA.sql;
 
 SELECT '✅ UPDATE v4.0 COMPLETED SUCCESSFULLY' AS status;

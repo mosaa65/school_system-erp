@@ -20,18 +20,45 @@ CREATE TABLE IF NOT EXISTS lookup_grade_descriptions (
     color_code VARCHAR(7) NULL COMMENT 'لون للعرض في الواجهة',
     sort_order TINYINT UNSIGNED DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
+    UNIQUE KEY uk_lgd_range (min_percentage, max_percentage),
     CHECK (max_percentage >= min_percentage),
     CHECK (min_percentage >= 0),
     CHECK (max_percentage <= 100)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='أوصاف التقديرات المرنة — قابلة للتخصيص';
 
-INSERT INTO lookup_grade_descriptions (min_percentage, max_percentage, name_ar, name_en, color_code, sort_order) VALUES
-(90, 100,   'ممتاز',       'Excellent',    '#2ecc71', 1),
-(80, 89.99, 'جيد جداً',    'Very Good',    '#3498db', 2),
-(65, 79.99, 'جيد',         'Good',         '#f39c12', 3),
-(50, 64.99, 'مقبول',       'Acceptable',   '#e67e22', 4),
-(0,  49.99, 'ضعيف',       'Weak',         '#e74c3c', 5);
+INSERT INTO lookup_grade_descriptions (min_percentage, max_percentage, name_ar, name_en, color_code, sort_order)
+SELECT src.min_percentage, src.max_percentage, src.name_ar, src.name_en, src.color_code, src.sort_order
+FROM (
+    SELECT 90.00 AS min_percentage, 100.00 AS max_percentage, 'ممتاز' AS name_ar, 'Excellent' AS name_en, '#2ecc71' AS color_code, 1 AS sort_order
+    UNION ALL SELECT 80.00, 89.99, 'جيد جداً', 'Very Good', '#3498db', 2
+    UNION ALL SELECT 65.00, 79.99, 'جيد', 'Good', '#f39c12', 3
+    UNION ALL SELECT 50.00, 64.99, 'مقبول', 'Acceptable', '#e67e22', 4
+    UNION ALL SELECT 0.00, 49.99, 'ضعيف', 'Weak', '#e74c3c', 5
+) src
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM lookup_grade_descriptions lgd
+    WHERE lgd.min_percentage = src.min_percentage
+      AND lgd.max_percentage = src.max_percentage
+);
+
+UPDATE lookup_grade_descriptions lgd
+JOIN (
+    SELECT 90.00 AS min_percentage, 100.00 AS max_percentage, 'ممتاز' AS name_ar, 'Excellent' AS name_en, '#2ecc71' AS color_code, 1 AS sort_order
+    UNION ALL SELECT 80.00, 89.99, 'جيد جداً', 'Very Good', '#3498db', 2
+    UNION ALL SELECT 65.00, 79.99, 'جيد', 'Good', '#f39c12', 3
+    UNION ALL SELECT 50.00, 64.99, 'مقبول', 'Acceptable', '#e67e22', 4
+    UNION ALL SELECT 0.00, 49.99, 'ضعيف', 'Weak', '#e74c3c', 5
+) src
+ON lgd.min_percentage = src.min_percentage
+AND lgd.max_percentage = src.max_percentage
+SET
+    lgd.name_ar = src.name_ar,
+    lgd.name_en = src.name_en,
+    lgd.color_code = src.color_code,
+    lgd.sort_order = src.sort_order,
+    lgd.is_active = TRUE;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 2. دالة وصف التقدير (محدّثة — تقرأ من الجدول مع fallback)

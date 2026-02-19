@@ -1,67 +1,56 @@
 -- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║           نظام الدرجات والتقويم الذكي (SGAS) - v3.3                        ║
+-- ║           نظام الدرجات والتقويم الذكي (SGAS) - v4.1                        ║
 -- ║           Smart Grading & Academic System                                  ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 -- 👨‍💻 Engineer: Mousa Alawadhi / Ahmed Al-Hattar
 -- 🏗️ Architectural Lead: Antigravity AI
--- التاريخ: 2026-02-14
--- الإصدار: 3.3 (Flexible and fully configurable grading model)
+-- التاريخ: 2026-02-19
+-- الإصدار: 4.1 (Sub-systems foldered by priority)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 📂 هيكل الملفات — يجب تنفيذها بالترتيب التالي:
+-- 📂 هيكل الأنظمة الفرعية — ترتيب التنفيذ حسب الأولوية:
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- 1️⃣  DDL_POLICIES.sql      → سياسات الدرجات والأوزان + lookup_grading_statuses
--- 2️⃣  DDL_EXAMS.sql          → الفترات الامتحانية + الجداول + درجات الطلاب
--- 3️⃣  DDL_HOMEWORKS.sql      → الواجبات المنزلية (مبسط: نفذ/لم ينفذ + درجة يدوية)
--- 4️⃣  DDL_MONTHLY.sql        → المحصلات الشهرية + Views حساب آلي + Procedure
--- 5️⃣  DDL_RESULTS.sql        → نتيجة الفصل + نتيجة العام + قرار النقل + Procedures
--- 6️⃣  DDL_LESSON_PREP.sql    → تحضير الدروس
--- 7️⃣  DDL_AUDIT.sql          → التدقيق والحوكمة + Triggers
--- 8️⃣  DDL_REPORTS.sql        → التقارير الشهرية + دوال التقدير
+-- 1️⃣  01_سياسات_الدرجات/DDL_POLICIES.sql
+-- 2️⃣  02_الاختبارات_والفترات/DDL_EXAMS.sql
+-- 3️⃣  03_الواجبات_المنزلية/DDL_HOMEWORKS.sql
+-- 4️⃣  04_المحصلة_الشهرية/DDL_MONTHLY.sql
+-- 5️⃣  05_نتائج_الفصل_والعام/DDL_RESULTS.sql
+-- 6️⃣  06_تحضير_الدروس/DDL_LESSON_PREP.sql
+-- 7️⃣  07_التدقيق_والحوكمة/DDL_AUDIT.sql
+-- 8️⃣  08_التقارير_والمخرجات/DDL_REPORTS.sql
+-- 9️⃣  09_أدوات_النسخ_السنوي/DDL_TOOLS.sql
 --
+-- 1️⃣0️⃣ 10_البيانات_التجريبية_والأمثلة/DEMO_DATA.sql (اختياري بعد التنفيذ)
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 📎 الأنظمة المطلوبة قبل التنفيذ (Dependencies):
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- ✅ System 01: الصلاحيات — users                   
+-- ✅ System 01: الصلاحيات — users
 -- ✅ System 02: النواة الأكاديمية — academic_years, semesters, academic_months,
 --                                    grade_levels, classrooms, subjects
 -- ✅ System 03: الموظفين — employees
 -- ✅ System 04: الطلاب — students, student_enrollments, student_attendance
--- ✅ System 08: لجان الامتحانات — exam_sessions (optional integration)
---
--- ═══════════════════════════════════════════════════════════════════════════════
--- 📊 ملخص تقريبي (نموذج مرن + مكونات قابلة للتخصيص):
--- ═══════════════════════════════════════════════════════════════════════════════
---
--- DDL_POLICIES:  grading_policies, lookup_grading_statuses,
---                grading_policy_custom_components
--- DDL_EXAMS:     exam_periods, exam_schedules, student_exam_scores,
---                exam_session_periods + governance triggers
--- DDL_HOMEWORKS: homeworks, student_homeworks + homework views/triggers
--- DDL_MONTHLY:   monthly_grades, monthly_custom_component_scores
---                + auto views + validation triggers + sp_calculate_monthly_grades
--- DDL_RESULTS:   semester_grades, annual_grades, annual_result,
---                lookup_annual_statuses, lookup_promotion_decisions,
---                grading_outcome_rules + ranking view + procedures
--- DDL_LESSON:    lesson_preparation
--- DDL_AUDIT:     student_grade_audit + lock/audit triggers
--- DDL_REPORTS:   fn_get_grade_description + monthly report views
---
+-- ✅ System 08: لجان الامتحانات — exam_timetable
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ⚡ تنفيذ جميع الملفات (MySQL CLI):
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- SOURCE DDL_POLICIES.sql;
--- SOURCE DDL_EXAMS.sql;
--- SOURCE DDL_HOMEWORKS.sql;
--- SOURCE DDL_MONTHLY.sql;
--- SOURCE DDL_RESULTS.sql;
--- SOURCE DDL_LESSON_PREP.sql;
--- SOURCE DDL_AUDIT.sql;
--- SOURCE DDL_REPORTS.sql;
+-- SOURCE 01_سياسات_الدرجات/DDL_POLICIES.sql;
+-- SOURCE 02_الاختبارات_والفترات/DDL_EXAMS.sql;
+-- SOURCE 03_الواجبات_المنزلية/DDL_HOMEWORKS.sql;
+-- SOURCE 04_المحصلة_الشهرية/DDL_MONTHLY.sql;
+-- SOURCE 05_نتائج_الفصل_والعام/DDL_RESULTS.sql;
+-- SOURCE 06_تحضير_الدروس/DDL_LESSON_PREP.sql;
+-- SOURCE 07_التدقيق_والحوكمة/DDL_AUDIT.sql;
+-- SOURCE 08_التقارير_والمخرجات/DDL_REPORTS.sql;
+-- SOURCE 09_أدوات_النسخ_السنوي/DDL_TOOLS.sql;
+--
+-- -- Optional:
+-- SOURCE 10_البيانات_التجريبية_والأمثلة/DEMO_DATA.sql;
 --
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-SELECT '📘 System 05 — SGAS v3.3: راجع ملفات DDL الفرعية للتنفيذ.' AS message;
+SELECT '📘 System 05 — SGAS v4.1: تم تنظيم الأنظمة الفرعية داخل مجلدات مرقمة.' AS message;

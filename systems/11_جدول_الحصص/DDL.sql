@@ -167,16 +167,21 @@ CREATE TABLE IF NOT EXISTS subject_priorities (
 COMMENT='أولويات وأوزان المواد للجدولة';
 
 -- إدخال أولويات المواد الافتراضية
-INSERT INTO subject_priorities (subject_id, weight_id, weekly_periods, allow_daily_repeat)
-SELECT s.id, 
+-- إدخال أولويات المواد (مستوى دقيق: مادة لكل صف)
+INSERT INTO subject_priorities (subject_id, grade_level_id, weight_id, weekly_periods, allow_daily_repeat)
+SELECT 
+    gs.subject_id,
+    gs.grade_level_id, 
     CASE 
         WHEN s.code IN ('MATH', 'ARB') THEN 1  -- ثقيلة
         WHEN s.code IN ('SCI', 'ENG', 'PHY', 'CHM', 'BIO') THEN 2  -- متوسطة
         ELSE 3  -- خفيفة
     END,
-    COALESCE((SELECT weekly_periods FROM grade_subjects gs WHERE gs.subject_id = s.id LIMIT 1), 2),
+    gs.weekly_periods,
     CASE WHEN s.code IN ('MATH', 'ARB') THEN TRUE ELSE FALSE END
-FROM subjects s WHERE s.is_active = TRUE;
+FROM grade_subjects gs
+JOIN subjects s ON gs.subject_id = s.id
+WHERE s.is_active = TRUE;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- القسم 4: توفر المعلمين (Teacher Availability)

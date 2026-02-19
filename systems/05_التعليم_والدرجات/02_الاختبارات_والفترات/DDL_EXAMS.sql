@@ -26,7 +26,12 @@ INSERT INTO lookup_exam_period_statuses (code, name_ar, description, sort_order)
 ('SCHEDULING', 'قيد الجدولة',      'جاري جدولة الاختبارات في System 08',          2),
 ('SCORING',    'قيد إدخال الدرجات', 'الاختبارات تمت — جاري إدخال الدرجات',        3),
 ('REVIEW',     'قيد المراجعة',     'الدرجات مدخلة — تحت المراجعة والاعتماد',     4),
-('APPROVED',   'معتمدة',           'الفترة معتمدة ومقفلة — لا يمكن التعديل',     5);
+('APPROVED',   'معتمدة',           'الفترة معتمدة ومقفلة — لا يمكن التعديل',     5)
+ON DUPLICATE KEY UPDATE
+    name_ar = VALUES(name_ar),
+    description = VALUES(description),
+    sort_order = VALUES(sort_order),
+    is_active = TRUE;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 2. الفترات الامتحانية (Academic Exam Periods)
@@ -127,10 +132,31 @@ BEGIN
     DECLARE v_is_locked BOOLEAN;
     DECLARE v_exam_grade_level_id INT;
     DECLARE v_student_grade_level_id INT;
+    DECLARE v_exam_subject_id INT;
+    DECLARE v_exam_classroom_id INT;
+    DECLARE v_exam_academic_year_id INT;
+    DECLARE v_exam_semester_id INT;
+    DECLARE v_current_user_id INT;
+    DECLARE v_current_employee_id INT;
+    DECLARE v_is_authorized INT DEFAULT 0;
 
     -- جلب بيانات الاختبار من exam_timetable + exam_periods
-    SELECT et.max_score, ep.is_locked, et.grade_level_id
-    INTO v_max_score, v_is_locked, v_exam_grade_level_id
+    SELECT
+        et.max_score,
+        ep.is_locked,
+        et.grade_level_id,
+        et.subject_id,
+        et.classroom_id,
+        ep.academic_year_id,
+        ep.semester_id
+    INTO
+        v_max_score,
+        v_is_locked,
+        v_exam_grade_level_id,
+        v_exam_subject_id,
+        v_exam_classroom_id,
+        v_exam_academic_year_id,
+        v_exam_semester_id
     FROM exam_timetable et
     JOIN exam_periods ep ON et.exam_period_id = ep.id
     WHERE et.id = NEW.exam_timetable_id
@@ -156,6 +182,48 @@ BEGIN
     IF v_student_grade_level_id != v_exam_grade_level_id THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'الطالب غير مسجل في صف يتوافق مع هذا الاختبار';
+    END IF;
+
+    -- التحقق من تكليف المعلم بالمادة/الفصل (§2.4)
+    -- bypass اختياري للعمليات النظامية: SET @skip_teacher_assignment_check = 1;
+    IF COALESCE(@skip_teacher_assignment_check, 0) = 0 THEN
+        SET v_current_user_id = COALESCE(@current_user_id, NULL);
+
+        IF v_current_user_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'يجب ضبط @current_user_id قبل إدخال درجات الاختبار';
+        END IF;
+
+        SELECT u.employee_id
+        INTO v_current_employee_id
+        FROM users u
+        WHERE u.id = v_current_user_id
+          AND u.is_active = TRUE
+        LIMIT 1;
+
+        IF v_current_employee_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'المستخدم الحالي غير مرتبط بملف موظف نشط';
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_is_authorized
+        FROM teacher_assignments ta
+        JOIN classrooms c ON c.id = ta.classroom_id
+        WHERE ta.employee_id = v_current_employee_id
+          AND ta.academic_year_id = v_exam_academic_year_id
+          AND ta.semester_id = v_exam_semester_id
+          AND ta.subject_id = v_exam_subject_id
+          AND ta.is_active = TRUE
+          AND (
+                (v_exam_classroom_id IS NOT NULL AND ta.classroom_id = v_exam_classroom_id)
+             OR (v_exam_classroom_id IS NULL AND c.grade_level_id = v_exam_grade_level_id)
+          );
+
+        IF v_is_authorized = 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'غير مصرح لك بإدخال درجات هذا الاختبار (تحقق من teacher_assignments)';
+        END IF;
     END IF;
 
     -- التحقق من الدرجة
@@ -190,18 +258,115 @@ BEFORE UPDATE ON student_exam_scores
 FOR EACH ROW
 BEGIN
     DECLARE v_max_score DECIMAL(5,2);
-    DECLARE v_is_locked BOOLEAN;
+    DECLARE v_old_is_locked BOOLEAN DEFAULT FALSE;
+    DECLARE v_new_is_locked BOOLEAN DEFAULT FALSE;
+    DECLARE v_exam_grade_level_id INT;
+    DECLARE v_student_grade_level_id INT;
+    DECLARE v_exam_subject_id INT;
+    DECLARE v_exam_classroom_id INT;
+    DECLARE v_exam_academic_year_id INT;
+    DECLARE v_exam_semester_id INT;
+    DECLARE v_current_user_id INT;
+    DECLARE v_current_employee_id INT;
+    DECLARE v_is_authorized INT DEFAULT 0;
 
-    SELECT et.max_score, ep.is_locked
-    INTO v_max_score, v_is_locked
+    -- إصلاح ثغرة القفل: تحقق أولًا من الاختبار القديم (OLD)
+    SELECT ep.is_locked
+    INTO v_old_is_locked
+    FROM exam_timetable et
+    JOIN exam_periods ep ON et.exam_period_id = ep.id
+    WHERE et.id = OLD.exam_timetable_id
+    LIMIT 1;
+
+    IF v_old_is_locked = TRUE THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'لا يمكن تعديل سجل درجة مرتبط بفترة امتحانية مقفلة';
+    END IF;
+
+    -- تحقق من الاختبار الجديد (NEW)
+    SELECT
+        et.max_score,
+        ep.is_locked,
+        et.grade_level_id,
+        et.subject_id,
+        et.classroom_id,
+        ep.academic_year_id,
+        ep.semester_id
+    INTO
+        v_max_score,
+        v_new_is_locked,
+        v_exam_grade_level_id,
+        v_exam_subject_id,
+        v_exam_classroom_id,
+        v_exam_academic_year_id,
+        v_exam_semester_id
     FROM exam_timetable et
     JOIN exam_periods ep ON et.exam_period_id = ep.id
     WHERE et.id = NEW.exam_timetable_id
     LIMIT 1;
 
-    IF v_is_locked = TRUE THEN
+    IF v_max_score IS NULL THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'لا يمكن تعديل درجات فترة امتحانية مقفلة';
+        SET MESSAGE_TEXT = 'الاختبار غير موجود في جدول الاختبارات';
+    END IF;
+
+    IF v_new_is_locked = TRUE THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'لا يمكن التعديل على فترة امتحانية مقفلة';
+    END IF;
+
+    -- التحقق من تطابق صف الطالب مع صف الاختبار
+    SELECT c.grade_level_id
+    INTO v_student_grade_level_id
+    FROM student_enrollments se
+    JOIN classrooms c ON se.classroom_id = c.id
+    WHERE se.id = NEW.enrollment_id
+    LIMIT 1;
+
+    IF v_student_grade_level_id != v_exam_grade_level_id THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'الطالب غير مسجل في صف يتوافق مع هذا الاختبار';
+    END IF;
+
+    -- التحقق من تكليف المعلم بالمادة/الفصل (§2.4)
+    IF COALESCE(@skip_teacher_assignment_check, 0) = 0 THEN
+        SET v_current_user_id = COALESCE(@current_user_id, NULL);
+
+        IF v_current_user_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'يجب ضبط @current_user_id قبل تعديل درجات الاختبار';
+        END IF;
+
+        SELECT u.employee_id
+        INTO v_current_employee_id
+        FROM users u
+        WHERE u.id = v_current_user_id
+          AND u.is_active = TRUE
+        LIMIT 1;
+
+        IF v_current_employee_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'المستخدم الحالي غير مرتبط بملف موظف نشط';
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_is_authorized
+        FROM teacher_assignments ta
+        JOIN classrooms c ON c.id = ta.classroom_id
+        WHERE ta.employee_id = v_current_employee_id
+          AND ta.academic_year_id = v_exam_academic_year_id
+          AND ta.semester_id = v_exam_semester_id
+          AND ta.subject_id = v_exam_subject_id
+          AND ta.is_active = TRUE
+          AND (
+                (v_exam_classroom_id IS NOT NULL AND ta.classroom_id = v_exam_classroom_id)
+             OR (v_exam_classroom_id IS NULL AND c.grade_level_id = v_exam_grade_level_id)
+          );
+
+        IF v_is_authorized = 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'غير مصرح لك بتعديل درجات هذا الاختبار (تحقق من teacher_assignments)';
+        END IF;
     END IF;
 
     IF NEW.score > v_max_score THEN
@@ -234,9 +399,29 @@ BEFORE DELETE ON student_exam_scores
 FOR EACH ROW
 BEGIN
     DECLARE v_is_locked BOOLEAN;
+    DECLARE v_exam_grade_level_id INT;
+    DECLARE v_exam_subject_id INT;
+    DECLARE v_exam_classroom_id INT;
+    DECLARE v_exam_academic_year_id INT;
+    DECLARE v_exam_semester_id INT;
+    DECLARE v_current_user_id INT;
+    DECLARE v_current_employee_id INT;
+    DECLARE v_is_authorized INT DEFAULT 0;
 
-    SELECT ep.is_locked
-    INTO v_is_locked
+    SELECT
+        ep.is_locked,
+        et.grade_level_id,
+        et.subject_id,
+        et.classroom_id,
+        ep.academic_year_id,
+        ep.semester_id
+    INTO
+        v_is_locked,
+        v_exam_grade_level_id,
+        v_exam_subject_id,
+        v_exam_classroom_id,
+        v_exam_academic_year_id,
+        v_exam_semester_id
     FROM exam_timetable et
     JOIN exam_periods ep ON et.exam_period_id = ep.id
     WHERE et.id = OLD.exam_timetable_id
@@ -245,6 +430,47 @@ BEGIN
     IF v_is_locked = TRUE THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'لا يمكن حذف درجات من فترة امتحانية مقفلة';
+    END IF;
+
+    -- التحقق من تكليف المعلم بالمادة/الفصل (§2.4)
+    IF COALESCE(@skip_teacher_assignment_check, 0) = 0 THEN
+        SET v_current_user_id = COALESCE(@current_user_id, NULL);
+
+        IF v_current_user_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'يجب ضبط @current_user_id قبل حذف درجات الاختبار';
+        END IF;
+
+        SELECT u.employee_id
+        INTO v_current_employee_id
+        FROM users u
+        WHERE u.id = v_current_user_id
+          AND u.is_active = TRUE
+        LIMIT 1;
+
+        IF v_current_employee_id IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'المستخدم الحالي غير مرتبط بملف موظف نشط';
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_is_authorized
+        FROM teacher_assignments ta
+        JOIN classrooms c ON c.id = ta.classroom_id
+        WHERE ta.employee_id = v_current_employee_id
+          AND ta.academic_year_id = v_exam_academic_year_id
+          AND ta.semester_id = v_exam_semester_id
+          AND ta.subject_id = v_exam_subject_id
+          AND ta.is_active = TRUE
+          AND (
+                (v_exam_classroom_id IS NOT NULL AND ta.classroom_id = v_exam_classroom_id)
+             OR (v_exam_classroom_id IS NULL AND c.grade_level_id = v_exam_grade_level_id)
+          );
+
+        IF v_is_authorized = 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'غير مصرح لك بحذف درجات هذا الاختبار (تحقق من teacher_assignments)';
+        END IF;
     END IF;
 END//
 
