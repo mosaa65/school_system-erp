@@ -182,9 +182,9 @@ SELECT
     COUNT(CASE WHEN ses.score < 50 THEN 1 END) AS failing_count,
     (COUNT(CASE WHEN ses.score >= 50 THEN 1 END) / COUNT(*)) * 100 AS success_rate
 FROM student_exam_scores ses
-JOIN exam_schedules es ON ses.exam_schedule_id = es.id
-JOIN subjects sub ON es.subject_id = sub.id
-JOIN grade_levels gl ON es.grade_level_id = gl.id
+JOIN exam_timetable et ON ses.exam_timetable_id = et.id
+JOIN subjects sub ON et.subject_id = sub.id
+JOIN grade_levels gl ON et.grade_level_id = gl.id
 GROUP BY sub.name_ar, gl.name_ar;
 
 -- 3. تحليل أحمال المعلمين (Teacher Workload BI)
@@ -195,7 +195,7 @@ SELECT
     AVG(ses.score) AS average_student_score_in_his_classes
 FROM employees e
 JOIN timetable_slots ts ON e.id = ts.employee_id
-LEFT JOIN student_exam_scores ses ON ts.subject_id = (SELECT subject_id FROM exam_schedules WHERE subject_id = ts.subject_id LIMIT 1)
+LEFT JOIN student_exam_scores ses ON ts.subject_id = (SELECT subject_id FROM exam_timetable WHERE subject_id = ts.subject_id LIMIT 1)
 GROUP BY e.full_name;
 
 -- 4. تحليل تفاعل أولياء الأمور (Engagement Score)

@@ -1,14 +1,40 @@
 ﻿-- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║           نظام الدرجات والتقويم الذكي (SGAS) - v3.3                        ║
+-- ║           نظام الدرجات والتقويم الذكي (SGAS) - v4.0                        ║
 -- ║           ملف 8: التقارير والاستعلامات (Reports & Queries)                 ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
--- التاريخ: 2026-02-14
--- الإصدار: 1.1 (Schema-aligned + customization-aware)
--- الوصف: Views و Functions للتقارير الشهرية مع دعم المكونات المخصصة
+-- التاريخ: 2026-02-19
+-- الإصدار: 4.0 (lookup_grade_descriptions + exam_type_id FK)
+-- الوصف: Views و Functions للتقارير مع دعم أوصاف التقديرات المرنة
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 1. دالة وصف التقدير
+-- 1. جدول مرجعي: أوصاف التقديرات (§3.2 — بدل hardcoded في دالة)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS lookup_grade_descriptions (
+    id TINYINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    min_percentage DECIMAL(5,2) NOT NULL COMMENT 'الحد الأدنى للنسبة',
+    max_percentage DECIMAL(5,2) NOT NULL DEFAULT 100 COMMENT 'الحد الأعلى للنسبة',
+    name_ar VARCHAR(50) NOT NULL COMMENT 'الوصف بالعربية',
+    name_en VARCHAR(50) NULL COMMENT 'الوصف بالإنجليزية',
+    color_code VARCHAR(7) NULL COMMENT 'لون للعرض في الواجهة',
+    sort_order TINYINT UNSIGNED DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    CHECK (max_percentage >= min_percentage),
+    CHECK (min_percentage >= 0),
+    CHECK (max_percentage <= 100)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='أوصاف التقديرات المرنة — قابلة للتخصيص';
+
+INSERT INTO lookup_grade_descriptions (min_percentage, max_percentage, name_ar, name_en, color_code, sort_order) VALUES
+(90, 100,   'ممتاز',       'Excellent',    '#2ecc71', 1),
+(80, 89.99, 'جيد جداً',    'Very Good',    '#3498db', 2),
+(65, 79.99, 'جيد',         'Good',         '#f39c12', 3),
+(50, 64.99, 'مقبول',       'Acceptable',   '#e67e22', 4),
+(0,  49.99, 'ضعيف',       'Weak',         '#e74c3c', 5);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 2. دالة وصف التقدير (محدّثة — تقرأ من الجدول مع fallback)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 DELIMITER //
@@ -18,16 +44,23 @@ RETURNS VARCHAR(50) DETERMINISTIC
 BEGIN
     DECLARE v_description VARCHAR(50);
 
-    IF p_percentage >= 90 THEN
-        SET v_description = 'ممتاز';
-    ELSEIF p_percentage >= 80 THEN
-        SET v_description = 'جيد جداً';
-    ELSEIF p_percentage >= 65 THEN
-        SET v_description = 'جيد';
-    ELSEIF p_percentage >= 50 THEN
-        SET v_description = 'مقبول';
-    ELSE
-        SET v_description = 'ضعيف';
+    -- محاولة القراءة من الجدول المرن
+    SELECT lgd.name_ar INTO v_description
+    FROM lookup_grade_descriptions lgd
+    WHERE lgd.is_active = TRUE
+      AND p_percentage >= lgd.min_percentage
+      AND p_percentage <= lgd.max_percentage
+    ORDER BY lgd.sort_order
+    LIMIT 1;
+
+    -- fallback إذا لم يتم تعريف نطاقات
+    IF v_description IS NULL THEN
+        IF p_percentage >= 90 THEN SET v_description = 'ممتاز';
+        ELSEIF p_percentage >= 80 THEN SET v_description = 'جيد جداً';
+        ELSEIF p_percentage >= 65 THEN SET v_description = 'جيد';
+        ELSEIF p_percentage >= 50 THEN SET v_description = 'مقبول';
+        ELSE SET v_description = 'ضعيف';
+        END IF;
     END IF;
 
     RETURN v_description;
@@ -111,7 +144,7 @@ LEFT JOIN grading_policies gp ON (
     gp.grade_level_id = gl.id
     AND gp.subject_id = sub.id
     AND gp.academic_year_id = ay.id
-    AND gp.exam_period_type = 'MONTHLY'
+    AND gp.exam_type_id = 1 -- MONTHLY
 )
 LEFT JOIN (
     SELECT
@@ -192,7 +225,7 @@ FROM (
         gp.grade_level_id = gl.id
         AND gp.subject_id = mg.subject_id
         AND gp.academic_year_id = sem.academic_year_id
-        AND gp.exam_period_type = 'MONTHLY'
+        AND gp.exam_type_id = 1 -- MONTHLY
     )
 
     LEFT JOIN (

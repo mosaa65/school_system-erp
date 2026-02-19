@@ -170,16 +170,16 @@ SELECT
     ep.name_ar AS period_name,
     ses.score,
     es.max_score,
-    (ses.score / es.max_score) * 100 AS percentage,
+    (ses.score / et.max_score) * 100 AS percentage,
     e.full_name AS teacher_name
 FROM student_exam_scores ses
-JOIN exam_schedules es ON ses.exam_schedule_id = es.id
-JOIN subjects sub ON es.subject_id = sub.id
+JOIN exam_timetable et ON ses.exam_timetable_id = et.id
+JOIN subjects sub ON et.subject_id = sub.id
 JOIN student_enrollments se ON ses.enrollment_id = se.id
 JOIN students s ON se.student_id = s.id
 JOIN classrooms c ON se.classroom_id = c.id
-JOIN grade_levels gl ON es.grade_level_id = gl.id
-JOIN exam_periods ep ON es.exam_period_id = ep.id
+JOIN grade_levels gl ON et.grade_level_id = gl.id
+JOIN exam_periods ep ON et.exam_period_id = ep.id
 LEFT JOIN employees e ON c.supervisor_id = e.id;
 
 -- 3. ملخص حضور الطلاب (Student Attendance Summary View)

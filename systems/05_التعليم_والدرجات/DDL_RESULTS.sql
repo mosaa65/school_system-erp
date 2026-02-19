@@ -1,11 +1,11 @@
 ﻿-- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║           نظام الدرجات والتقويم الذكي (SGAS) - v3.3                        ║
+-- ║           نظام الدرجات والتقويم الذكي (SGAS) - v4.0                        ║
 -- ║           ملف 5: النتائج — الفصل + العام + النقل (Results)                  ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
--- التاريخ: 2026-02-14
--- الإصدار: 3.3 (Configurable outcomes + robust ranking)
--- الاعتمادات: DDL_POLICIES, DDL_MONTHLY, System 02, System 04
+-- التاريخ: 2026-02-19
+-- الإصدار: 4.0 (exam_timetable FK + exam_type_id FK + all ENUMs removed)
+-- الاعتمادات: DDL_POLICIES, DDL_MONTHLY, System 02, System 04, System 08
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 1. نتيجة الفصل الدراسي (Semester Grades)
@@ -382,7 +382,7 @@ BEGIN
         LEFT JOIN grading_policies gp ON gp.academic_year_id = p_academic_year_id
             AND gp.grade_level_id = v_grade_level_id
             AND gp.subject_id = sg.subject_id
-            AND gp.exam_period_type = 'MONTHLY'
+            AND gp.exam_type_id = 1 -- MONTHLY
         WHERE se.classroom_id = p_classroom_id
           AND se.is_active = TRUE
         GROUP BY se.id, sg.subject_id
@@ -446,7 +446,7 @@ BEGIN
     LEFT JOIN grading_policies gp ON gp.academic_year_id = p_academic_year_id
         AND gp.grade_level_id = v_grade_level_id
         AND gp.subject_id = ag.subject_id
-        AND gp.exam_period_type = 'MONTHLY'
+        AND gp.exam_type_id = 1 -- MONTHLY
     LEFT JOIN (
         SELECT
             gpcc.policy_id,
@@ -551,24 +551,24 @@ BEGIN
     JOIN (
         SELECT
             ses.enrollment_id,
-            esched.subject_id,
+            et.subject_id,
             SUM(ses.score) AS total_final_score,
-            SUM(esched.max_score) AS total_final_max
+            SUM(et.max_score) AS total_final_max
         FROM student_exam_scores ses
-        JOIN exam_schedules esched ON ses.exam_schedule_id = esched.id
-        JOIN exam_periods ep ON esched.exam_period_id = ep.id
-        WHERE ep.type = 'FINAL'
+        JOIN exam_timetable et ON ses.exam_timetable_id = et.id
+        JOIN exam_periods ep ON et.exam_period_id = ep.id
+        WHERE ep.exam_type_id = 3 -- FINAL
           AND ep.semester_id = p_semester_id
           AND ep.academic_year_id = v_academic_year_id
-          AND esched.grade_level_id = v_grade_level_id
+          AND et.grade_level_id = v_grade_level_id
           AND ses.is_present = TRUE
-        GROUP BY ses.enrollment_id, esched.subject_id
+        GROUP BY ses.enrollment_id, et.subject_id
     ) final_data ON final_data.enrollment_id = sg.enrollment_id
                  AND final_data.subject_id = sg.subject_id
     LEFT JOIN grading_policies gp_final ON gp_final.academic_year_id = v_academic_year_id
         AND gp_final.grade_level_id = v_grade_level_id
         AND gp_final.subject_id = sg.subject_id
-        AND gp_final.exam_period_type = 'FINAL'
+        AND gp_final.exam_type_id = 3 -- FINAL
     SET sg.final_exam_score = CASE
             WHEN final_data.total_final_max > 0
                 THEN (final_data.total_final_score / final_data.total_final_max)
@@ -584,4 +584,4 @@ END//
 DELIMITER ;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
-SELECT '✅ DDL_RESULTS v3.3: تم إنشاء النتائج المرنة + الترتيب + قواعد النقل بنجاح' AS message;
+SELECT '✅ DDL_RESULTS v4.0: النتائج + exam_timetable + exam_type_id FK' AS message;

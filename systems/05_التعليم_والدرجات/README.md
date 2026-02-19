@@ -1,5 +1,5 @@
 # 📊 نظام الدرجات والتقويم الذكي (SGAS)
-## النسخة 3.3 - هيكل مرن قابل للتخصيص 🏗️
+## النسخة 4.0 - هيكل مرن + تكامل مع نظام الجدولة 🏗️
 
 ---
 
@@ -10,7 +10,21 @@
 | **المهندس المعتمد** | موسى العواضي (Senior Architect) |
 | **محرك التطوير** | Antigravity AI |
 | **الحالة** | ⭐⭐⭐⭐⭐ (Intelligence Grade) |
-| **ملفات DDL** | 8 ملفات مُقسّمة (انظر أدناه) |
+| **ملفات DDL** | 9 ملفات مُقسّمة (انظر أدناه) |
+
+---
+
+## 🚀 المقدمة
+التعليم هو "المنتج" الأساسي للمدرسة، والدرجات هي مقياس جودته. نظام التعليم والدرجات هو المصنع الذي تدار فيه العملية التعليمية؛ من تحضير الدروس، وشرحها، واختبار الطلاب فيها، وحتى إصدار الشهادات النهائية. صُمم هذا النظام ليضمن حق الطالب في تقييم عادل، وحق المعلم في تنظيم وقته، وحق ولي الأمر في معرفة مستوى ابنه بوضوح.
+
+## ❓ ماذا يقدّم هذا النظام؟
+يغطي الدورة الأكاديمية الكاملة:
+- **للمعلم:** أداة لتنظيم الجدول، تحضير الدروس، ورصد الدرجات بسهولة.
+- **للطالب:** معرفة واجباته ونتائج اختباراته أولاً بأول.
+- **للإدارة:** مراقبة سير المناهج وإصدار الشهادات بدقة متناهية دون أخطاء الجمع اليدوي.
+
+## 💎 الفوائد الملموسة
+- **صفر أخطاء حسابية:** النظام يجمع الدرجات ويحسب المعدلات والنسب المئوية آلياً.
 
 ---
 
@@ -31,24 +45,24 @@
 
 ---
 
-## 📂 هيكل الملفات (v3.3)
+## 📂 هيكل الملفات (v4.0)
 
 ```
 05_التعليم_والدرجات/
 ├── DDL.sql                  → ملف Master (توثيق ترتيب التنفيذ)
-├── DDL_POLICIES.sql         → 1️⃣ سياسات الدرجات والأوزان
-├── DDL_EXAMS.sql            → 2️⃣ الفترات الامتحانية + الجداول + الدرجات
-├── DDL_HOMEWORKS.sql        → 3️⃣ الواجبات (مبسط: نفذ/لم ينفذ + درجة يدوية)
-├── DDL_MONTHLY.sql          → 4️⃣ المحصلات الشهرية + حساب آلي
-├── DDL_RESULTS.sql          → 5️⃣ نتائج الفصل + العام + النقل 🆕
+├── DDL_POLICIES.sql         → 1️⃣ سياسات الدرجات + teacher_assignments
+├── DDL_EXAMS.sql            → 2️⃣ الفترات الامتحانية + الدرجات (exam_timetable → System 08)
+├── DDL_HOMEWORKS.sql        → 3️⃣ الواجبات (مبسط: نفّذ/لم ينفّذ + درجة يدوية)
+├── DDL_MONTHLY.sql          → 4️⃣ المحصلات الشهرية + حساب آلي + denormalization
+├── DDL_RESULTS.sql          → 5️⃣ نتائج الفصل + العام + النقل
 ├── DDL_LESSON_PREP.sql      → 6️⃣ تحضير الدروس
 ├── DDL_AUDIT.sql            → 7️⃣ التدقيق والحوكمة
+├── DDL_REPORTS.sql          → 8️⃣ التقارير + lookup_grade_descriptions
+├── DDL_TOOLS.sql            → 9️⃣ أدوات النسخ السنوي (سياسات + فترات + قواعد) 🆕
 ├── DEMO_DATA.sql            → بيانات تجريبية كاملة
 ├── README_END_TO_END_EXAMPLE.md → شرح عملي من الألف للياء (10 سجلات)
 └── README.md                → هذا الملف
 ```
-
----
 
 ## 🔄 كيف يعمل النظام؟ (المسار الكامل)
 
@@ -69,15 +83,16 @@
 
 | الملف | العناصر | العدد |
 |-------|---------|-------|
-| DDL_POLICIES | `grading_policies`, `lookup_grading_statuses`, `grading_policy_custom_components` | 3 جداول |
-| DDL_EXAMS | `exam_periods`, `exam_schedules`, `student_exam_scores`, `exam_session_periods` | 4 جداول + 1 View + 1 Proc + Triggers حوكمة |
+| DDL_POLICIES | `grading_policies`, `lookup_grading_statuses`, `grading_policy_custom_components`, `teacher_assignments` | 4 جداول |
+| DDL_EXAMS | `exam_periods`, `lookup_exam_period_statuses`, `student_exam_scores` + Triggers | 3 جداول + 1 Lookup + Triggers حوكمة |
 | DDL_HOMEWORKS | `lookup_homework_types`, `homeworks`, `student_homeworks` + Views + `sp_populate_student_homeworks` | 1 Lookup + 2 جداول + 2 Views + 1 Proc + Triggers تحقق |
-| DDL_MONTHLY | `monthly_grades`, `monthly_custom_component_scores` + `v_auto_attendance_score`, `v_auto_homework_score` + `sp_calculate_monthly_grades` | 2 جداول + 2 Views + 1 Proc + Triggers |
-| DDL_RESULTS | `semester_grades`, `annual_grades`, `annual_result`, `lookup_annual_statuses`, `lookup_promotion_decisions`, `grading_outcome_rules` + `v_sgas_class_ranking` + 3 Procedures | 6 جداول + 1 View + 3 Procs |
+| DDL_MONTHLY | `monthly_grades`, `monthly_custom_component_scores` + Views + SP + Trigger | 2 جداول + 2 Views + 1 Proc + 1 Trigger |
+| DDL_RESULTS | `semester_grades`, `annual_grades`, `annual_result`, Lookups + Views + 3 SPs | 6 جداول + 1 View + 3 Procs |
 | DDL_LESSON_PREP | `lesson_preparation` | 1 جدول |
 | DDL_AUDIT | `student_grade_audit` + 5 Triggers | 1 جدول + 5 Triggers |
-| DDL_REPORTS | `v_rpt_monthly_subject_details`, `v_rpt_monthly_student_summary` + `fn_get_grade_description` | 2 Views + 1 Function |
-| **الإجمالي** | | **نموذج مرن مع مكونات تقييم قابلة للتخصيص لكل مدرسة** |
+| DDL_REPORTS | `lookup_grade_descriptions` + `fn_get_grade_description` + 2 Views | 1 جدول + 2 Views + 1 Function |
+| DDL_TOOLS | `sp_copy_policies`, `sp_copy_exam_periods`, `sp_copy_outcome_rules`, `sp_copy_all_year_settings` | 4 Stored Procedures 🆕 |
+| **الإجمالي** | | **نموذج مرن + جدولة عبر System 08 + أدوات نسخ سنوي** |
 
 ---
 
@@ -98,7 +113,7 @@ graph LR
 | **System 01 — الصلاحيات** | يقرأ منه | `users` (من أنشأ / من اعتمد) |
 | **System 02 — النواة** | يقرأ منه | `academic_years`, `semesters`, `academic_months`, `grade_levels`, `classrooms`, `subjects` |
 | **System 04 — الطلاب** | يقرأ منه | `student_enrollments`, `student_attendance` (حساب المواظبة آلياً) |
-| **System 08 — لجان الامتحانات** | تكامل ثنائي | `exam_session_periods` تربط الفترات الامتحانية بالجلسات اللوجستية |
+| **System 08 — الجدولة واللجان** | تكامل ثنائي | `exam_timetable` (System 08) يربط الفترات بجدول الاختبارات → `student_exam_scores` (System 05) |
 | **System 16 — التقارير** | يقرأ من S05 | `v_report_grades_detailed` يعرض درجات الطلاب |
 | **System 17 — الشهادات** | يقرأ من S05 | `v_certificate_data_primary` يجمّع بيانات الشهادة |
 
@@ -174,6 +189,7 @@ SOURCE DDL_RESULTS.sql;
 SOURCE DDL_LESSON_PREP.sql;
 SOURCE DDL_AUDIT.sql;
 SOURCE DDL_REPORTS.sql;
+SOURCE DDL_TOOLS.sql;
 
 -- 2. البيانات التجريبية
 SOURCE DEMO_DATA.sql;

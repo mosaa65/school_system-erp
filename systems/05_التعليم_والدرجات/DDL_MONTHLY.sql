@@ -1,11 +1,11 @@
 -- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║           نظام الدرجات والتقويم الذكي (SGAS) - v3.3                        ║
+-- ║           نظام الدرجات والتقويم الذكي (SGAS) - v4.0                        ║
 -- ║           ملف 4: المحصلات الشهرية + الحساب الآلي (Monthly Grades)           ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
--- التاريخ: 2026-02-14
--- الإصدار: 3.3 (Flexible monthly components + contribution support)
--- الاعتمادات: DDL_POLICIES, DDL_EXAMS, DDL_HOMEWORKS, System 04 (الحضور)
+-- التاريخ: 2026-02-19
+-- الإصدار: 4.0 (exam_timetable FK + manual score validation + denormalization)
+-- الاعتمادات: DDL_POLICIES, System 08 (exam_timetable), DDL_HOMEWORKS, System 04 (الحضور)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 1. المحصلة الشهرية (جمع كل مكونات الدرجة للشهر)
@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS monthly_grades (
     enrollment_id INT UNSIGNED NOT NULL,
     subject_id INT UNSIGNED NOT NULL,
     month_id INT UNSIGNED NOT NULL COMMENT 'FK → academic_months',
+
+    -- أعمدة denormalized لتسريع الاستعلامات (§2.5)
+    semester_id INT UNSIGNED NULL COMMENT 'FK → semesters (denormalized من academic_months)',
+    academic_year_id INT UNSIGNED NULL COMMENT 'FK → academic_years (denormalized)',
 
     -- مكونات المحصلة الشهرية
     attendance_score DECIMAL(5,2) DEFAULT 0 COMMENT 'درجة المواظبة (محسوبة من نظام الحضور)',
@@ -41,12 +45,16 @@ CREATE TABLE IF NOT EXISTS monthly_grades (
 
     UNIQUE KEY uk_monthly (enrollment_id, subject_id, month_id),
     INDEX idx_mg_month_subject (month_id, subject_id),
+    INDEX idx_mg_semester (semester_id),
+    INDEX idx_mg_year (academic_year_id),
 
     FOREIGN KEY (enrollment_id) REFERENCES student_enrollments(id),
     FOREIGN KEY (subject_id) REFERENCES subjects(id),
-    FOREIGN KEY (month_id) REFERENCES academic_months(id)
+    FOREIGN KEY (month_id) REFERENCES academic_months(id),
+    FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE SET NULL,
+    FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='المحصلة الشهرية المرنة للمادة';
+COMMENT='المحصلة الشهرية المرنة — مع denormalization للفصل والعام';
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 2. View: حساب درجة المواظبة آلياً من نظام الحضور (System 04)
@@ -158,7 +166,7 @@ BEGIN
       AND gp.subject_id = NEW.subject_id
       AND gp.academic_year_id = c.academic_year_id
       AND gp.grade_level_id = c.grade_level_id
-      AND gp.exam_period_type = 'MONTHLY'
+      AND gp.exam_type_id = 1 -- MONTHLY
       AND sem.academic_year_id = c.academic_year_id
     LIMIT 1;
 
@@ -233,7 +241,7 @@ BEGIN
     WHERE gp.academic_year_id = v_academic_year_id
       AND gp.grade_level_id = v_grade_level_id
       AND gp.subject_id = p_subject_id
-      AND gp.exam_period_type = 'MONTHLY'
+      AND gp.exam_type_id = 1 -- MONTHLY
     LIMIT 1;
 
     SELECT am.start_date, am.end_date
@@ -243,13 +251,15 @@ BEGIN
     LIMIT 1;
 
     INSERT INTO monthly_grades (
-        enrollment_id, subject_id, month_id,
+        enrollment_id, subject_id, month_id, semester_id, academic_year_id,
         attendance_score, homework_score, exam_score, custom_components_score
     )
     SELECT
         se.id AS enrollment_id,
         p_subject_id,
         p_month_id,
+        (SELECT am2.semester_id FROM academic_months am2 WHERE am2.id = p_month_id LIMIT 1),
+        v_academic_year_id,
 
         COALESCE((vas.attendance_percentage / 100) * COALESCE(v_max_attendance, 5.00), 0) AS calc_attendance,
 
@@ -288,12 +298,12 @@ BEGIN
         SELECT
             ses.enrollment_id,
             SUM(ses.score) AS total_score,
-            SUM(esched.max_score) AS total_max
+            SUM(et.max_score) AS total_max
         FROM student_exam_scores ses
-        JOIN exam_schedules esched ON ses.exam_schedule_id = esched.id
-        WHERE esched.subject_id = p_subject_id
-          AND esched.grade_level_id = v_grade_level_id
-          AND esched.exam_date BETWEEN v_month_start AND v_month_end
+        JOIN exam_timetable et ON ses.exam_timetable_id = et.id
+        WHERE et.subject_id = p_subject_id
+          AND et.grade_level_id = v_grade_level_id
+          AND et.exam_date BETWEEN v_month_start AND v_month_end
           AND ses.is_present = TRUE
         GROUP BY ses.enrollment_id
     ) exam_data ON exam_data.enrollment_id = se.id
@@ -330,4 +340,48 @@ END//
 DELIMITER ;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
-SELECT '✅ DDL_MONTHLY v3.3: تم إنشاء المحصلات الشهرية المرنة بنجاح' AS message;
+-- 6. Trigger: التحقق من حدود الدرجات اليدوية (§2.6)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+DELIMITER //
+
+CREATE TRIGGER trg_monthly_grades_validate_manual
+BEFORE UPDATE ON monthly_grades
+FOR EACH ROW
+BEGIN
+    DECLARE v_max_activity DECIMAL(5,2) DEFAULT 999;
+    DECLARE v_max_contribution DECIMAL(5,2) DEFAULT 999;
+    DECLARE v_grade_level_id INT;
+
+    -- جلب صف الطالب
+    SELECT c.grade_level_id INTO v_grade_level_id
+    FROM student_enrollments se
+    JOIN classrooms c ON se.classroom_id = c.id
+    WHERE se.id = NEW.enrollment_id
+    LIMIT 1;
+
+    -- جلب الحدود من السياسة
+    SELECT gp.max_activity_score, gp.max_contribution_score
+    INTO v_max_activity, v_max_contribution
+    FROM grading_policies gp
+    WHERE gp.grade_level_id = v_grade_level_id
+      AND gp.subject_id = NEW.subject_id
+      AND gp.academic_year_id = COALESCE(NEW.academic_year_id, gp.academic_year_id)
+      AND gp.exam_type_id = 1 -- MONTHLY
+    LIMIT 1;
+
+    IF NEW.activity_score > v_max_activity THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'درجة النشاط تتجاوز الحد الأقصى المعتمد في السياسة';
+    END IF;
+
+    IF NEW.contribution_score > v_max_contribution THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'درجة المساهمة تتجاوز الحد الأقصى المعتمد في السياسة';
+    END IF;
+END//
+
+DELIMITER ;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+SELECT '✅ DDL_MONTHLY v4.0: المحصلات الشهرية + التحقق من الحدود + denormalization' AS message;

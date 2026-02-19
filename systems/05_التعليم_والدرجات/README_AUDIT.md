@@ -109,7 +109,7 @@ GROUP BY grade_table;
   - `semester_grades`
   - `annual_grades`
   - `student_exam_scores`
-- Triggers التدقيق تعتمد على متغير الجلسة `@current_user_id` لتعبئة `changed_by_user_id`.
+- Triggers التدقيق تعتمد على متغير الجلسة `@current_user_id` لتعبئة `changed_by_user_id`، مع استخدام `COALESCE` لتوفير قيمة افتراضية (1) إذا لم يتم تعيين المتغير (v4.0).
 - Triggers القفل الحالية تتحقق من محاولة تغيير `grading_status_id` من `3` (معتمد) إلى قيمة أخرى.
 
-**تم التحديث:** 2026-02-14
+**تم التحديث:** 2026-02-19 (v4.0)

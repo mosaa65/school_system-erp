@@ -1,10 +1,10 @@
 ﻿-- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║           نظام الدرجات والتقويم الذكي (SGAS) - v3.3                        ║
+-- ║           نظام الدرجات والتقويم الذكي (SGAS) - v4.0                        ║
 -- ║           ملف 7: التدقيق والحوكمة (Audit & Governance)                     ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
--- التاريخ: 2026-02-14
--- الإصدار: 3.3 (Strict lock on approved records + safe audit actor handling)
+-- التاريخ: 2026-02-19
+-- الإصدار: 4.0 (COALESCE for @current_user_id + exam_timetable FK)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 1. سجل تدقيق تغييرات الدرجات
@@ -111,14 +111,14 @@ BEGIN
             (enrollment_id, subject_id, grade_table, grade_field, old_value, new_value, changed_by_user_id)
         SELECT
             NEW.enrollment_id,
-            es.subject_id,
+            et.subject_id,
             'student_exam_scores',
             'score',
             OLD.score,
             NEW.score,
-            @current_user_id
-        FROM exam_schedules es
-        WHERE es.id = NEW.exam_schedule_id;
+            COALESCE(@current_user_id, NULL)
+        FROM exam_timetable et
+        WHERE et.id = NEW.exam_timetable_id;
     END IF;
 END//
 
@@ -172,4 +172,4 @@ END//
 DELIMITER ;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
-SELECT '✅ DDL_AUDIT v3.3: تم إنشاء التدقيق والحوكمة الصارمة بنجاح' AS message;
+SELECT '✅ DDL_AUDIT v4.0: التدقيق + COALESCE(@current_user_id) + exam_timetable FK' AS message;

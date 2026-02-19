@@ -168,7 +168,7 @@ CALL sp_fill_final_exam_score(
 
 **يقوم بـ:**
 1. جلب `grade_level_id` و `academic_year_id` للفصل.
-2. جمع درجات الطلاب من الاختبارات التي نوعها `FINAL`.
+2. جمع درجات الطلاب من `exam_timetable` حيث `exam_type_id` يشير للنهائي (FINAL).
 3. تحديث `semester_grades.final_exam_score` لكل طالب/مادة في الفصل.
 
 ---
@@ -218,4 +218,4 @@ ORDER BY ar.percentage;
 - `annual_grades` يحتوي أيضاً على: `calculated_at`, `approved_by_user_id`, `approved_at`, `created_at`, `updated_at`.
 - `annual_result` يحتوي أيضاً على: `notes`, `approved_by_user_id`, `approved_at`, `created_at`, `updated_at`.
 
-**تم التحديث:** 2026-02-14
+**تم التحديث:** 2026-02-19 (v4.0)

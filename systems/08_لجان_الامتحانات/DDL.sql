@@ -1,14 +1,16 @@
 -- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║                      نظام توزيع لجان الامتحانات                              ║
--- ║              Exam Committee Distribution System Database Schema               ║
+-- ║         نظام جدولة الاختبارات وتوزيع اللجان (ETDS) - v2.0                 ║
+-- ║         Exam Timetabling & Distribution System                              ║
 -- ║                                                                               ║
--- ║       يشمل: جلسات الامتحان، اللجان، الأطر، المقاعد، التوزيع التلقائي          ║
+-- ║  يشمل: جدولة الاختبارات، جلسات الامتحان، اللجان، الأطر، المقاعد،            ║
+-- ║        المراقبين، التوزيع التلقائي، التحقق من التعارضات                       ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
--- التاريخ: 2026-01-10
--- الإصدار: 1.0
+-- التاريخ: 2026-02-19 (محدّث)
+-- الإصدار: 2.0
 -- المهندس المسؤول: عمار الشعيبي / موسى العواضي
 -- قاعدة البيانات: MySQL 8.0+
+-- ملاحظة: يجب تنفيذ DDL_SCHEDULING.sql أولاً (يحتوي lookup_exam_types)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- القسم 1: جداول Lookup للجان الامتحانات
@@ -88,7 +90,7 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
     
     -- معلومات الامتحان
     exam_name VARCHAR(100) NOT NULL COMMENT 'اسم الامتحان',
-    exam_type ENUM('شهري', 'فصلي', 'نهائي', 'أخرى') DEFAULT 'فصلي' COMMENT 'نوع الامتحان',
+    exam_type_id TINYINT UNSIGNED NOT NULL DEFAULT 3 COMMENT 'FK → lookup_exam_types',
     building_id TINYINT UNSIGNED NULL COMMENT 'المبنى',
     round_number TINYINT UNSIGNED DEFAULT 1 COMMENT 'الدور (1=الأول، 2=الثاني...)',
     
@@ -114,6 +116,8 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
         REFERENCES academic_years(id) ON DELETE RESTRICT,
     CONSTRAINT fk_examsession_semester FOREIGN KEY (semester_id) 
         REFERENCES semesters(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_examsession_examtype FOREIGN KEY (exam_type_id)
+        REFERENCES lookup_exam_types(id) ON DELETE RESTRICT,
     CONSTRAINT fk_examsession_creator FOREIGN KEY (created_by_user_id) 
         REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT fk_examsession_locker FOREIGN KEY (locked_by_user_id) 
@@ -122,10 +126,11 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
         REFERENCES lookup_buildings(id) ON DELETE SET NULL,
     
     -- القيود
-    UNIQUE KEY uk_exam_session (academic_year_id, semester_id, exam_type, round_number),
-    INDEX idx_examsession_dates (start_date, end_date)
+    UNIQUE KEY uk_exam_session (academic_year_id, semester_id, exam_type_id, round_number),
+    INDEX idx_examsession_dates (start_date, end_date),
+    INDEX idx_examsession_type (exam_type_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='جلسات الامتحان';
+COMMENT='جلسات الامتحان — تستخدم lookup_exam_types بدل ENUM';
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- القسم 3: إعدادات التوزيع
@@ -454,5 +459,6 @@ LEFT JOIN lookup_buildings lb ON es.building_id = lb.id;
 -- رسالة اكتمال التنفيذ
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-SELECT '✅ تم إنشاء جداول نظام توزيع لجان الامتحانات بنجاح!' AS message;
-SELECT CONCAT('📊 عدد الجداول: 12 جدول + 4 Views') AS summary;
+SELECT '✅ تم إنشاء جداول نظام جدولة الاختبارات وتوزيع اللجان بنجاح!' AS message;
+SELECT CONCAT('📊 DDL.sql: 12 جدول + 4 Views | DDL_SCHEDULING.sql: 8 جداول + 3 Views + 1 SP') AS summary;
+SELECT 'ملاحظة: تأكد من تنفيذ DDL_SCHEDULING.sql أولاً (يحتوي lookup_exam_types)' AS note;
